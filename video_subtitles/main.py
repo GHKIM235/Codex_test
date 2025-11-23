@@ -2,7 +2,7 @@
 
 import argparse
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from services.audio_extractor import extract_audio
 from services.audio_chunker import chunk_audio
@@ -14,9 +14,7 @@ from utils.segment_store import load_segments, save_segments
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description=(
-            "Generate Japanese subtitles immediately and translate them to Korean later."
-        ),
+        description="Generate Japanese subtitles immediately and Korean subtitles either now or later.",
     )
     parser.add_argument(
         "video_path",
@@ -40,10 +38,18 @@ def build_parser() -> argparse.ArgumentParser:
         type=str,
         help="Optional override for the Korean SRT output path when translating.",
     )
+    parser.add_argument(
+        "--skip-translate",
+        action="store_true",
+        help="Create only Japanese subtitles now and defer Korean translation.",
+    )
     return parser
 
 
-def run_transcription_pipeline(video_path: Path, model_name: str) -> Tuple[Path, Path]:
+def run_transcription_pipeline(
+    video_path: Path,
+    model_name: str,
+) -> Tuple[List[Dict[str, Any]], Path, Path]:
     """
     Extract audio, run Whisper, emit Japanese subtitles, and persist raw segments.
     """
@@ -70,7 +76,7 @@ def run_transcription_pipeline(video_path: Path, model_name: str) -> Tuple[Path,
 
     segments_path = video_path.with_name(f"{video_path.stem}_segments.json")
     save_segments(segments, segments_path, source_video=video_path)
-    return ja_output_path, segments_path
+    return segments, ja_output_path, segments_path
 
 
 def translate_saved_segments(
@@ -89,12 +95,12 @@ def translate_saved_segments(
     if not segments:
         raise RuntimeError(f"No segments found in {file_path}")
 
-    translator = JapaneseToKoreanTranslator()
-    translated_segments = translator.translate_segments(segments)
-
-    output_path = output_override or _derive_korean_output(file_path, source_video)
-    write_srt(translated_segments, output_path)
-    return output_path
+    return _write_korean_srt(
+        segments,
+        segments_file=file_path,
+        source_video=source_video,
+        output_override=output_override,
+    )
 
 
 def _derive_korean_output(segments_file: Path, source_video: Optional[Path]) -> Path:
@@ -109,6 +115,20 @@ def _derive_korean_output(segments_file: Path, source_video: Optional[Path]) -> 
     if stem.endswith(suffix):
         stem = stem[: -len(suffix)]
     return segments_file.with_name(f"{stem}_ko.srt")
+
+
+def _write_korean_srt(
+    segments: List[Dict[str, Any]],
+    *,
+    segments_file: Path,
+    source_video: Optional[Path],
+    output_override: Optional[Path],
+) -> Path:
+    translator = JapaneseToKoreanTranslator()
+    translated_segments = translator.translate_segments(segments)
+    output_path = output_override or _derive_korean_output(segments_file, source_video)
+    write_srt(translated_segments, output_path)
+    return output_path
 
 
 def main() -> None:
@@ -129,10 +149,26 @@ def main() -> None:
     if not args.video_path:
         parser.error("You must provide a video path to transcribe or use --translate-from.")
 
-    ja_path, segments_path = run_transcription_pipeline(Path(args.video_path), args.model)
+    segments, ja_path, segments_path = run_transcription_pipeline(
+        Path(args.video_path),
+        args.model,
+    )
     print(f"Japanese subtitles saved to: {ja_path}")
     print(f"Segments saved to: {segments_path}")
-    print("Run this script again with --translate-from <segments_json> to generate Korean subtitles.")
+    if args.skip_translate:
+        print("Run again with --translate-from <segments_json> to generate Korean subtitles.")
+        return
+
+    output_override = (
+        Path(args.korean_output).expanduser().resolve() if args.korean_output else None
+    )
+    ko_path = _write_korean_srt(
+        segments,
+        segments_file=segments_path,
+        source_video=Path(args.video_path).expanduser().resolve(),
+        output_override=output_override,
+    )
+    print(f"Korean subtitles saved to: {ko_path}")
 
 
 if __name__ == "__main__":

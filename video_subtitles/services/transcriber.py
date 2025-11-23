@@ -18,6 +18,8 @@ class WhisperTranscriber:
         self.model_name = model_name or self.DEFAULT_MODEL_NAME
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         print(f"Using device: {self.device}")
+        if self.device == "cuda":
+            print("CUDA acceleration enabled for Whisper transcription.")
         self.model = whisper.load_model(self.model_name, device=self.device)
 
     def transcribe_chunks(self, chunks: List[AudioChunk]) -> List[Dict[str, Any]]:
