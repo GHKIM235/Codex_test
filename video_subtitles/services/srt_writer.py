@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Any, Dict, List
 
-from ..utils.time_format import format_timestamp
+from utils.time_format import format_timestamp
 
 
 def write_srt(segments: List[Dict[str, Any]], output_path: Path) -> Path:

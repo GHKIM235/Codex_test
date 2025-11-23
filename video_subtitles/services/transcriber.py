@@ -3,6 +3,7 @@
 from typing import Any, Dict, List
 
 import whisper
+from tqdm.auto import tqdm
 
 from .audio_chunker import AudioChunk
 
@@ -21,7 +22,20 @@ class WhisperTranscriber:
         """
         results: List[Dict[str, Any]] = []
 
-        for chunk in chunks:
+        if not chunks:
+            return results
+
+        total_chunks = len(chunks)
+        progress_bar = tqdm(
+            chunks,
+            total=total_chunks,
+            desc="Transcribing chunks",
+            unit="chunk",
+        )
+
+        for index, chunk in enumerate(progress_bar, start=1):
+            progress_bar.set_postfix_str(f"chunk {index}/{total_chunks}")
+
             transcription = self.model.transcribe(
                 str(chunk.path),
                 language="ja",
@@ -42,4 +56,5 @@ class WhisperTranscriber:
                     }
                 )
 
+        progress_bar.close()
         return results
