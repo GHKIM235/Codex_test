@@ -2,3 +2,4 @@ openai-whisper
 pydub
 deep-translator
 tqdm
+torch
